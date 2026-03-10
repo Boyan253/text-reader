@@ -3,13 +3,12 @@ title Text Reader Server
 
 :: Create desktop shortcut on first run
 if not exist "%USERPROFILE%\Desktop\Text Reader.lnk" (
-    echo Creating desktop shortcut...
-    powershell -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%USERPROFILE%\Desktop\Text Reader.lnk'); $s.TargetPath = '%~dp0start.bat'; $s.WorkingDirectory = '%~dp0'; $s.IconLocation = '%~dp0icon.ico'; $s.Description = 'Text Reader - Neural TTS'; $s.WindowStyle = 7; $s.Save()"
-    echo Shortcut created on Desktop!
+    powershell -ExecutionPolicy Bypass -File "%~dp0create-shortcut.ps1"
 )
 
 :: Install dependencies if needed
-pip show edge-tts >nul 2>&1 || (
+pip show edge-tts >nul 2>&1
+if errorlevel 1 (
     echo Installing dependencies...
     pip install -r "%~dp0requirements.txt"
 )
