@@ -10,7 +10,7 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 import edge_tts
 
 VERSION = "1.0.0"
-GITHUB_RAW_BASE = "https://raw.githubusercontent.com/BoyanDashworthy/text-reader/main/"
+GITHUB_RAW_BASE = "https://raw.githubusercontent.com/Boyan253/text-reader/master/"
 CHECK_INTERVAL = 300  # check every 5 minutes
 
 
