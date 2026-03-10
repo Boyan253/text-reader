@@ -5,16 +5,19 @@ import os
 import re
 import threading
 import time
+import uuid
 import urllib.request
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from socketserver import ThreadingMixIn
 
 import edge_tts
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 GITHUB_RAW_BASE = "https://raw.githubusercontent.com/Boyan253/text-reader/master/"
-CHECK_INTERVAL = 300  # check every 5 minutes
+CHECK_INTERVAL = 300
 CHUNK_MAX_CHARS = 2000
+
+jobs = {}
 
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
@@ -22,6 +25,15 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
 
 
 class TTSHandler(SimpleHTTPRequestHandler):
+    def _json(self, data, status=200):
+        body = json.dumps(data).encode()
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', len(body))
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_POST(self):
         if self.path == '/tts':
             length = int(self.headers['Content-Length'])
@@ -31,36 +43,26 @@ class TTSHandler(SimpleHTTPRequestHandler):
             voice = data.get('voice', 'bg-BG-KalinaNeural')
             rate = data.get('rate', '+0%')
 
+            job_id = uuid.uuid4().hex[:8]
             chunks = split_text(text)
-            print(f"[tts] Generating {len(chunks)} chunks for {len(text)} chars...")
+            jobs[job_id] = {
+                "status": "generating",
+                "progress": 0,
+                "total": len(chunks),
+                "audio": None,
+                "error": None,
+            }
 
-            # Generate all audio first, then send
-            audio_parts = []
-            for i, chunk in enumerate(chunks):
-                try:
-                    audio = asyncio.run(generate_tts(chunk, voice, rate))
-                    audio_parts.append(audio)
-                    print(f"[tts] Chunk {i+1}/{len(chunks)} done ({len(audio)} bytes)")
-                except Exception as e:
-                    print(f"[tts] Error on chunk {i+1}: {e}")
+            t = threading.Thread(
+                target=generate_job, args=(job_id, chunks, voice, rate), daemon=True
+            )
+            t.start()
 
-            full_audio = b"".join(audio_parts)
-
-            self.send_response(200)
-            self.send_header('Content-Type', 'audio/mpeg')
-            self.send_header('Content-Length', len(full_audio))
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.end_headers()
-            self.wfile.write(full_audio)
-            print(f"[tts] Sent {len(full_audio)} bytes total.")
+            self._json({"job_id": job_id, "chunks": len(chunks)})
 
         elif self.path == '/check-update':
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.end_headers()
             updated = check_and_update()
-            self.wfile.write(json.dumps({"updated": updated, "version": VERSION}).encode())
+            self._json({"updated": updated, "version": VERSION})
         else:
             self.send_error(404)
 
@@ -74,22 +76,44 @@ class TTSHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path == '/' or self.path == '/index.html':
             self.path = '/text-reader.html'
-        elif self.path == '/version':
+            super().do_GET()
+        elif self.path.startswith('/status/'):
+            job_id = self.path[8:]
+            job = jobs.get(job_id)
+            if not job:
+                self._json({"error": "not found"}, 404)
+            else:
+                self._json({
+                    "status": job["status"],
+                    "progress": job["progress"],
+                    "total": job["total"],
+                    "error": job["error"],
+                })
+        elif self.path.startswith('/audio/'):
+            job_id = self.path[7:]
+            job = jobs.get(job_id)
+            if not job or job["status"] != "done":
+                self.send_error(404)
+                return
+            audio = job["audio"]
             self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Type', 'audio/mpeg')
+            self.send_header('Content-Length', len(audio))
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
-            self.wfile.write(json.dumps({"version": VERSION}).encode())
-            return
-        super().do_GET()
+            self.wfile.write(audio)
+            del jobs[job_id]
+        elif self.path == '/version':
+            self._json({"version": VERSION})
+        else:
+            super().do_GET()
 
     def end_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
         super().end_headers()
 
     def log_message(self, format, *args):
-        if '/tts' not in str(args):
-            super().log_message(format, *args)
+        pass
 
 
 def split_text(text):
@@ -129,6 +153,25 @@ def split_text(text):
     return final
 
 
+def generate_job(job_id, chunks, voice, rate):
+    audio_parts = []
+    for i, chunk in enumerate(chunks):
+        try:
+            audio = asyncio.run(generate_tts(chunk, voice, rate))
+            audio_parts.append(audio)
+            jobs[job_id]["progress"] = i + 1
+            print(f"[tts:{job_id}] Chunk {i+1}/{len(chunks)} done")
+        except Exception as e:
+            print(f"[tts:{job_id}] Error on chunk {i+1}: {e}")
+            jobs[job_id]["status"] = "error"
+            jobs[job_id]["error"] = str(e)
+            return
+
+    jobs[job_id]["audio"] = b"".join(audio_parts)
+    jobs[job_id]["status"] = "done"
+    print(f"[tts:{job_id}] All done, {len(jobs[job_id]['audio'])} bytes")
+
+
 async def generate_tts(text, voice, rate):
     communicate = edge_tts.Communicate(text, voice, rate=rate)
     buffer = io.BytesIO()
@@ -144,8 +187,7 @@ def fetch_remote_version():
         req = urllib.request.Request(url, headers={"Cache-Control": "no-cache"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             return resp.read().decode().strip()
-    except Exception as e:
-        print(f"[updater] Could not check version: {e}")
+    except Exception:
         return None
 
 
@@ -155,39 +197,22 @@ def download_file(filename):
         req = urllib.request.Request(url, headers={"Cache-Control": "no-cache"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             return resp.read()
-    except Exception as e:
-        print(f"[updater] Failed to download {filename}: {e}")
+    except Exception:
         return None
 
 
 def check_and_update():
     global VERSION
     remote_version = fetch_remote_version()
-    if not remote_version:
+    if not remote_version or remote_version == VERSION:
         return False
 
-    if remote_version == VERSION:
-        return False
-
-    print(f"[updater] New version available: {remote_version} (current: {VERSION})")
     base_dir = os.path.dirname(os.path.abspath(__file__))
-
-    html_data = download_file("text-reader.html")
-    if html_data:
-        with open(os.path.join(base_dir, "text-reader.html"), "wb") as f:
-            f.write(html_data)
-        print("[updater] Updated text-reader.html")
-
-    server_data = download_file("text-reader-server.py")
-    if server_data:
-        with open(os.path.join(base_dir, "text-reader-server.py"), "wb") as f:
-            f.write(server_data)
-        print("[updater] Updated text-reader-server.py (restart to apply)")
-
-    ver_data = download_file("version.txt")
-    if ver_data:
-        with open(os.path.join(base_dir, "version.txt"), "wb") as f:
-            f.write(ver_data)
+    for fname in ["text-reader.html", "text-reader-server.py", "version.txt"]:
+        data = download_file(fname)
+        if data:
+            with open(os.path.join(base_dir, fname), "wb") as f:
+                f.write(data)
 
     VERSION = remote_version
     print(f"[updater] Updated to v{VERSION}")
@@ -195,12 +220,12 @@ def check_and_update():
 
 
 def updater_loop():
-    time.sleep(10)
+    time.sleep(30)
     while True:
         try:
             check_and_update()
-        except Exception as e:
-            print(f"[updater] Error: {e}")
+        except Exception:
+            pass
         time.sleep(CHECK_INTERVAL)
 
 
@@ -208,9 +233,7 @@ if __name__ == '__main__':
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     port = 8765
 
-    updater_thread = threading.Thread(target=updater_loop, daemon=True)
-    updater_thread.start()
-    print(f"[updater] Auto-update enabled (checking every {CHECK_INTERVAL}s)")
+    threading.Thread(target=updater_loop, daemon=True).start()
 
     server = ThreadedHTTPServer(('localhost', port), TTSHandler)
     print(f'Text Reader v{VERSION} running at http://localhost:{port}')

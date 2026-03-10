@@ -323,57 +323,80 @@ rateInput.addEventListener('input', () => {
   rateVal.textContent = (v >= 0 ? '+' : '') + v + '%';
 });
 
+let currentJobId = null;
+let pollTimer = null;
+
 async function playText() {
   const text = textArea.value.trim();
   if (!text) { status.textContent = 'Няма текст.'; return; }
 
   synth_stop();
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   isPlaying = true;
   btnPlay.classList.add('playing');
   btnPlay.innerHTML = '<span class="loader"></span> Генериране...';
   btnPlay.disabled = true;
   btnPause.disabled = true;
   btnStop.disabled = false;
-  status.textContent = 'Генериране на аудио...';
 
   const voice = voiceSelect.value;
   const rate = parseInt(rateInput.value);
   const rateStr = (rate >= 0 ? '+' : '') + rate + '%';
 
   try {
-    const resp = await fetch('http://localhost:8765/tts', {
+    const resp = await fetch('/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text, voice, rate: rateStr })
     });
-
     if (!resp.ok) throw new Error('Server error: ' + resp.status);
 
-    const blob = await resp.blob();
-    const url = URL.createObjectURL(blob);
+    const job = await resp.json();
+    currentJobId = job.job_id;
+    status.textContent = 'Генериране... (0 / ' + job.chunks + ' части)';
 
-    player.src = url;
-    player.play();
+    pollTimer = setInterval(async () => {
+      try {
+        const sr = await fetch('/status/' + currentJobId);
+        const st = await sr.json();
 
-    btnPlay.innerHTML = '&#9654; Playing...';
-    btnPause.disabled = false;
-    status.textContent = 'Възпроизвеждане...';
+        if (st.status === 'generating') {
+          status.textContent = 'Генериране... (' + st.progress + ' / ' + st.total + ' части)';
+        } else if (st.status === 'done') {
+          clearInterval(pollTimer);
+          pollTimer = null;
+          const audioResp = await fetch('/audio/' + currentJobId);
+          const blob = await audioResp.blob();
+          const url = URL.createObjectURL(blob);
+          player.src = url;
+          player.play();
 
-    player.onended = () => {
-      finishPlaying();
-      status.textContent = 'Готово!';
-      URL.revokeObjectURL(url);
-    };
+          btnPlay.innerHTML = '&#9654; Playing...';
+          btnPause.disabled = false;
+          status.textContent = 'Възпроизвеждане...';
 
-    player.onerror = () => {
-      finishPlaying();
-      status.textContent = 'Грешка при възпроизвеждане.';
-      URL.revokeObjectURL(url);
-    };
+          player.onended = () => {
+            finishPlaying();
+            status.textContent = 'Готово!';
+            URL.revokeObjectURL(url);
+          };
+          player.onerror = () => {
+            finishPlaying();
+            status.textContent = 'Грешка при възпроизвеждане.';
+            URL.revokeObjectURL(url);
+          };
+        } else if (st.status === 'error') {
+          clearInterval(pollTimer);
+          pollTimer = null;
+          finishPlaying();
+          status.textContent = 'Грешка: ' + (st.error || 'unknown');
+        }
+      } catch(e) {}
+    }, 500);
 
   } catch (e) {
     finishPlaying();
-    status.textContent = 'Грешка: ' + e.message + ' — сървърът пуснат ли е?';
+    status.textContent = 'Грешка — сървърът пуснат ли е? (start.bat)';
   }
 }
 
@@ -397,6 +420,7 @@ function synth_stop() {
 }
 
 function stopText() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   synth_stop();
   finishPlaying();
   status.textContent = 'Спряно.';
