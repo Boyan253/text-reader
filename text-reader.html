@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Text Reader</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Quicksand', 'Segoe UI', sans-serif;
+    background: linear-gradient(135deg, #fce4ec 0%, #f8bbd0 30%, #f3e5f5 60%, #e8eaf6 100%);
+    color: #4a2040;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 30px 20px;
+  }
+  h1 {
+    font-size: 32px;
+    margin-bottom: 6px;
+    color: #d81b60;
+    font-weight: 700;
+    letter-spacing: 1px;
+  }
+  .subtitle {
+    font-size: 14px;
+    color: #e91e8a;
+    margin-bottom: 22px;
+    font-weight: 500;
+  }
+  .container {
+    width: 100%;
+    max-width: 800px;
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(12px);
+    border-radius: 24px;
+    padding: 30px;
+    box-shadow: 0 8px 32px rgba(216, 27, 96, 0.15), 0 2px 8px rgba(0,0,0,0.05);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+  }
+  textarea {
+    width: 100%;
+    height: 300px;
+    background: rgba(255, 255, 255, 0.8);
+    color: #4a2040;
+    border: 2px solid #f8bbd0;
+    border-radius: 16px;
+    padding: 16px;
+    font-family: 'Quicksand', sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    resize: vertical;
+    outline: none;
+    transition: border-color 0.3s, box-shadow 0.3s;
+  }
+  textarea:focus {
+    border-color: #ec407a;
+    box-shadow: 0 0 0 4px rgba(236, 64, 122, 0.15);
+  }
+  textarea::placeholder { color: #ce93d8; }
+  .controls {
+    display: flex;
+    gap: 10px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  button {
+    padding: 12px 28px;
+    border: none;
+    border-radius: 50px;
+    font-family: 'Quicksand', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.25s;
+    letter-spacing: 0.5px;
+  }
+  button:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
+  button:active { transform: translateY(0); }
+  button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
+  #btnPlay {
+    background: linear-gradient(135deg, #ec407a, #ab47bc);
+    color: #fff;
+    box-shadow: 0 3px 12px rgba(236, 64, 122, 0.35);
+  }
+  #btnPlay:hover:not(:disabled) {
+    background: linear-gradient(135deg, #d81b60, #8e24aa);
+    box-shadow: 0 5px 18px rgba(236, 64, 122, 0.45);
+  }
+  #btnPlay.playing {
+    background: linear-gradient(135deg, #ff8a65, #f06292);
+  }
+  #btnPause {
+    background: rgba(236, 64, 122, 0.12);
+    color: #c2185b;
+    border: 2px solid #f48fb1;
+  }
+  #btnPause:hover:not(:disabled) {
+    background: rgba(236, 64, 122, 0.2);
+  }
+  #btnStop {
+    background: rgba(171, 71, 188, 0.12);
+    color: #7b1fa2;
+    border: 2px solid #ce93d8;
+  }
+  #btnStop:hover:not(:disabled) {
+    background: rgba(171, 71, 188, 0.2);
+  }
+  .setting {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .setting label {
+    font-size: 11px;
+    color: #ad1457;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    font-weight: 700;
+  }
+  select, input[type="range"] {
+    background: rgba(255,255,255,0.9);
+    color: #4a2040;
+    border: 2px solid #f8bbd0;
+    border-radius: 12px;
+    padding: 8px 12px;
+    font-family: 'Quicksand', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    outline: none;
+    transition: border-color 0.3s;
+  }
+  select:focus, input[type="range"]:focus { border-color: #ec407a; }
+  select { min-width: 220px; cursor: pointer; }
+  input[type="range"] {
+    width: 130px;
+    cursor: pointer;
+    -webkit-appearance: none;
+    height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(90deg, #f8bbd0, #ce93d8);
+    padding: 0;
+    border: none;
+    margin-top: 6px;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #ec407a, #ab47bc);
+    box-shadow: 0 2px 6px rgba(236,64,122,0.4);
+    cursor: pointer;
+  }
+  .settings-row {
+    display: flex;
+    gap: 20px;
+    margin-top: 20px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+  }
+  .status {
+    margin-top: 16px;
+    font-size: 14px;
+    color: #ad1457;
+    min-height: 20px;
+    font-weight: 500;
+  }
+  .char-count {
+    text-align: right;
+    font-size: 13px;
+    color: #ce93d8;
+    margin-top: 6px;
+    font-weight: 500;
+  }
+  .speed-val {
+    font-size: 13px;
+    color: #ab47bc;
+    text-align: center;
+    font-weight: 600;
+  }
+  .loader {
+    display: inline-block;
+    width: 16px; height: 16px;
+    border: 2.5px solid rgba(255,255,255,0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .hearts {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    overflow: hidden;
+    z-index: -1;
+  }
+  .heart {
+    position: absolute;
+    font-size: 20px;
+    opacity: 0.15;
+    animation: float linear infinite;
+  }
+  @keyframes float {
+    0% { transform: translateY(100vh) rotate(0deg); opacity: 0; }
+    10% { opacity: 0.15; }
+    90% { opacity: 0.15; }
+    100% { transform: translateY(-10vh) rotate(360deg); opacity: 0; }
+  }
+  .update-banner {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    background: linear-gradient(135deg, #ec407a, #ab47bc);
+    color: #fff;
+    text-align: center;
+    padding: 10px 20px;
+    font-weight: 600;
+    font-size: 14px;
+    z-index: 1000;
+    transform: translateY(-100%);
+    transition: transform 0.4s ease;
+    cursor: pointer;
+  }
+  .update-banner.show { transform: translateY(0); }
+</style>
+</head>
+<body>
+
+<div class="update-banner" id="updateBanner" onclick="location.reload()">New version available! Click to refresh.</div>
+<div class="hearts" id="hearts"></div>
+
+<h1>Text Reader</h1>
+<div class="subtitle">paste & listen</div>
+
+<div class="container">
+  <textarea id="text" placeholder="Постави текст тук..."></textarea>
+  <div class="char-count"><span id="charCount">0</span> символа</div>
+
+  <div class="controls">
+    <button id="btnPlay" onclick="playText()">&#9654; Play</button>
+    <button id="btnPause" onclick="togglePause()" disabled>&#10074;&#10074; Pause</button>
+    <button id="btnStop" onclick="stopText()" disabled>&#9632; Stop</button>
+  </div>
+
+  <div class="settings-row">
+    <div class="setting">
+      <label>Глас</label>
+      <select id="voiceSelect"></select>
+    </div>
+    <div class="setting">
+      <label>Скорост</label>
+      <input type="range" id="rate" min="-50" max="100" step="5" value="0">
+      <div class="speed-val" id="rateVal">+0%</div>
+    </div>
+  </div>
+
+  <div class="status" id="status"></div>
+</div>
+
+<audio id="player"></audio>
+
+<script>
+// Floating hearts background
+const heartsContainer = document.getElementById('hearts');
+const heartChars = ['\u2665', '\u2764', '\u2661', '\u2740', '\u2727'];
+for (let i = 0; i < 15; i++) {
+  const heart = document.createElement('span');
+  heart.className = 'heart';
+  heart.textContent = heartChars[Math.floor(Math.random() * heartChars.length)];
+  heart.style.left = Math.random() * 100 + '%';
+  heart.style.fontSize = (14 + Math.random() * 18) + 'px';
+  heart.style.animationDuration = (12 + Math.random() * 18) + 's';
+  heart.style.animationDelay = (Math.random() * 20) + 's';
+  heartsContainer.appendChild(heart);
+}
+
+const textArea = document.getElementById('text');
+const voiceSelect = document.getElementById('voiceSelect');
+const rateInput = document.getElementById('rate');
+const rateVal = document.getElementById('rateVal');
+const status = document.getElementById('status');
+const btnPlay = document.getElementById('btnPlay');
+const btnPause = document.getElementById('btnPause');
+const btnStop = document.getElementById('btnStop');
+const charCount = document.getElementById('charCount');
+const player = document.getElementById('player');
+
+let isPlaying = false;
+
+const voices = [
+  { id: 'bg-BG-KalinaNeural', name: 'Kalina (BG, женски)' },
+  { id: 'bg-BG-BorislavNeural', name: 'Borislav (BG, мъжки)' },
+  { id: 'en-US-JennyNeural', name: 'Jenny (EN, женски)' },
+  { id: 'en-US-GuyNeural', name: 'Guy (EN, мъжки)' },
+  { id: 'en-US-AriaNeural', name: 'Aria (EN, женски)' },
+  { id: 'en-GB-SoniaNeural', name: 'Sonia (EN-GB, женски)' },
+  { id: 'en-GB-RyanNeural', name: 'Ryan (EN-GB, мъжки)' },
+  { id: 'de-DE-KatjaNeural', name: 'Katja (DE, женски)' },
+  { id: 'fr-FR-DeniseNeural', name: 'Denise (FR, женски)' },
+  { id: 'es-ES-ElviraNeural', name: 'Elvira (ES, женски)' },
+  { id: 'ru-RU-SvetlanaNeural', name: 'Svetlana (RU, женски)' },
+  { id: 'ru-RU-DmitryNeural', name: 'Dmitry (RU, мъжки)' },
+];
+
+voices.forEach(v => {
+  const opt = document.createElement('option');
+  opt.value = v.id;
+  opt.textContent = v.name;
+  voiceSelect.appendChild(opt);
+});
+
+textArea.addEventListener('input', () => {
+  charCount.textContent = textArea.value.length.toLocaleString();
+});
+
+rateInput.addEventListener('input', () => {
+  const v = parseInt(rateInput.value);
+  rateVal.textContent = (v >= 0 ? '+' : '') + v + '%';
+});
+
+async function playText() {
+  const text = textArea.value.trim();
+  if (!text) { status.textContent = 'Няма текст.'; return; }
+
+  synth_stop();
+  isPlaying = true;
+  btnPlay.classList.add('playing');
+  btnPlay.innerHTML = '<span class="loader"></span> Генериране...';
+  btnPlay.disabled = true;
+  btnPause.disabled = true;
+  btnStop.disabled = false;
+  status.textContent = 'Генериране на аудио...';
+
+  const voice = voiceSelect.value;
+  const rate = parseInt(rateInput.value);
+  const rateStr = (rate >= 0 ? '+' : '') + rate + '%';
+
+  try {
+    const resp = await fetch('http://localhost:8765/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voice, rate: rateStr })
+    });
+
+    if (!resp.ok) throw new Error('Server error: ' + resp.status);
+
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+
+    player.src = url;
+    player.play();
+
+    btnPlay.innerHTML = '&#9654; Playing...';
+    btnPause.disabled = false;
+    status.textContent = 'Възпроизвеждане...';
+
+    player.onended = () => {
+      finishPlaying();
+      status.textContent = 'Готово!';
+      URL.revokeObjectURL(url);
+    };
+
+    player.onerror = () => {
+      finishPlaying();
+      status.textContent = 'Грешка при възпроизвеждане.';
+      URL.revokeObjectURL(url);
+    };
+
+  } catch (e) {
+    finishPlaying();
+    status.textContent = 'Грешка: ' + e.message + ' — сървърът пуснат ли е?';
+  }
+}
+
+function togglePause() {
+  if (!isPlaying) return;
+  if (player.paused) {
+    player.play();
+    status.textContent = 'Възпроизвеждане...';
+    btnPause.innerHTML = '&#10074;&#10074; Pause';
+  } else {
+    player.pause();
+    status.textContent = 'Пауза';
+    btnPause.innerHTML = '&#9654; Resume';
+  }
+}
+
+function synth_stop() {
+  player.pause();
+  player.currentTime = 0;
+  player.src = '';
+}
+
+function stopText() {
+  synth_stop();
+  finishPlaying();
+  status.textContent = 'Спряно.';
+}
+
+function finishPlaying() {
+  isPlaying = false;
+  btnPlay.classList.remove('playing');
+  btnPlay.innerHTML = '&#9654; Play';
+  btnPlay.disabled = false;
+  btnPause.disabled = true;
+  btnStop.disabled = true;
+  btnPause.innerHTML = '&#10074;&#10074; Pause';
+}
+
+// Auto-update check — polls server, shows banner if HTML was updated
+let currentPageHash = null;
+async function checkForUpdates() {
+  try {
+    const resp = await fetch('/text-reader.html?_t=' + Date.now());
+    const text = await resp.text();
+    const hash = text.length + '-' + text.slice(0, 200);
+    if (currentPageHash === null) {
+      currentPageHash = hash;
+    } else if (hash !== currentPageHash) {
+      document.getElementById('updateBanner').classList.add('show');
+    }
+  } catch(e) {}
+}
+checkForUpdates();
+setInterval(checkForUpdates, 60000);
+</script>
+
+</body>
+</html>
